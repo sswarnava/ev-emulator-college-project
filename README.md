@@ -12,3 +12,4 @@ yarn run dev
 ```
 
 The dev command runs `ts-node-dev` against `src/server.ts`.
+# ev-emulator-college-project
