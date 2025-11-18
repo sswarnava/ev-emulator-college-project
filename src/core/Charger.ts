@@ -94,28 +94,31 @@ export class Charger {
     return telemetry;
   }
 
-  startSession(sessionId: string): boolean {
-    if (this.status === 'AVAILABLE') {
-      this.status = 'CHARGING';
-      this.currentSessionId = sessionId;
-      console.log(`Charger ${this.id} started session ${sessionId}`);
-      (async () => {
-        try {
-          const start_ts = new Date().toISOString();
-          await insertSessionStart(sessionId, this.id, start_ts);
-        } catch (e) {
-          if (e instanceof Error && e.message === "SESSION_EXISTS") {
-            console.log(`Duplicate session ${sessionId} for charger ${this.id}`);
-          } else {
-            console.error(`Failed to insert session start for ${this.id}:`, e);
-          }
-        }
-      })();
-      return true;
-    } else {
-      console.log(`Charger ${this.id} cannot start session; status=${this.status}`);
-      return false;
+  async startSession(sessionId: string): Promise<{ ok: boolean; error?: string }> {
+    // If charger is already charging, reject immediately
+    if (this.status === 'CHARGING') {
+      console.log(`Charger ${this.id} busy; cannot start session ${sessionId}`);
+      return { ok: false, error: 'CHARGER_BUSY' };
     }
+
+    // Try to reserve the session id in DB first. If session already exists, propagate error.
+    try {
+      const start_ts = new Date().toISOString();
+      await insertSessionStart(sessionId, this.id, start_ts);
+    } catch (e) {
+      if (e && (e as any).code === 'SESSION_EXISTS') {
+        console.log(`Duplicate session ${sessionId} for charger ${this.id}`);
+        return { ok: false, error: 'SESSION_EXISTS' };
+      }
+      // Unexpected DB error - rethrow to let higher layers handle it
+      throw e;
+    }
+
+    // Mark charger as charging only after DB reservation succeeds
+    this.status = 'CHARGING';
+    this.currentSessionId = sessionId;
+    console.log(`Charger ${this.id} started session ${sessionId}`);
+    return { ok: true };
   }
 
   stopSession(reason = "USER_STOP") {
@@ -185,6 +188,15 @@ export class Charger {
 
   onTelemetry(cb: (t: any) => void) {
     this.telemetryListeners.push(cb);
+  }
+
+  reset() {
+    if (this.status === 'FAULTY') {
+      this.status = 'AVAILABLE';
+      this.currentSessionId = null;
+      console.log(`[${this.id}] Reset to AVAILABLE`);
+    }
+    // If not FAULTY, do nothing
   }
 
 }

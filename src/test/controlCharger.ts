@@ -27,7 +27,7 @@ const rl = readline.createInterface({
 
 rl.prompt();
 
-rl.on('line', (line) => {
+rl.on('line', async (line) => {
   const input = line.trim();
   if (!input) {
     rl.prompt();
@@ -45,8 +45,16 @@ rl.on('line', (line) => {
           console.log('Usage: start <sessionId>');
           break;
         }
-        const ok = emulatorManager.startSession(CHARGER_ID, sessionId);
-        console.log(ok ? `Started session ${sessionId}` : 'Failed to start session');
+        try {
+          const result = await emulatorManager.startSession(CHARGER_ID, sessionId);
+          if (result.ok) {
+            console.log(`Started session ${sessionId}`);
+          } else {
+            console.log(`Failed to start session: ${result.error}`);
+          }
+        } catch (e) {
+          console.error('Error starting session:', e);
+        }
         break;
       }
       case 'stop': {

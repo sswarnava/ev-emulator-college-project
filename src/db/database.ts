@@ -43,7 +43,9 @@ export async function initDb() {
 
 export async function insertSessionStart(id: string, chargerId: string, start_ts: string) {
   if (await sessionExists(id)) {
-    throw new Error("SESSION_EXISTS");
+    const err = new Error("SESSION_EXISTS");
+    (err as any).code = "SESSION_EXISTS";
+    throw err;
   }
   await db.execute({
     sql: `INSERT INTO sessions (id, chargerId, start_ts, status) VALUES (?, ?, ?, ?)`,
@@ -68,6 +70,14 @@ export async function getSessionStartTime(sessionId: string): Promise<string | n
     return result.rows[0].start_ts as string;
   }
   return null;
+}
+
+export async function getSessionById(id: string) {
+  const result = await db.execute({
+    sql: `SELECT * FROM sessions WHERE id = ?`,
+    args: [id],
+  });
+  return result.rows?.[0] ?? null;
 }
 
 export async function updateSessionStop(id: string, stop_ts: string, energy_kWh: number, stop_reason: string, duration_seconds: number, duration_minutes: number, duration_human: string, bill_amount: number) {

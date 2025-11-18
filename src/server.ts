@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import emulatorManager from './core/EmulatorManager';
-import { db, initDb } from "./db/database";
+import { db, initDb, getSessionById } from "./db/database";
 
 export const app = express();
 
@@ -28,7 +28,7 @@ app.post('/spawn', (req, res) => {
 });
 
 // POST /command - send simple commands to a charger
-app.post('/command', (req, res) => {
+app.post('/command', async (req, res) => {
   const body = req.body || {};
   const id: string = body.id;
   const cmd: string = body.cmd;
@@ -45,9 +45,17 @@ app.post('/command', (req, res) => {
       if (!sessionId) {
         return res.status(400).json({ success: false, error: 'sessionId is required for start' });
       }
-      const success = emulatorManager.startSession(id, sessionId);
-      if (!success) {
-        return res.status(400).json({ success: false, error: 'SESSION_EXISTS' });
+      const result = await emulatorManager.startSession(id, sessionId);
+      if (!result.ok) {
+        const err = result.error || 'UNKNOWN_ERROR';
+        // Map CHARGER_BUSY or SESSION_EXISTS to client-facing error
+        if (err === 'SESSION_EXISTS' || err === 'CHARGER_BUSY') {
+          return res.status(400).json({ success: false, error: err });
+        }
+        if (err === 'NOT_FOUND') {
+          return res.status(404).json({ success: false, error: 'CHARGER_NOT_FOUND' });
+        }
+        return res.status(500).json({ success: false, error: err });
       }
       console.log(`Command start for ${id} session ${sessionId}`);
       break;
@@ -63,6 +71,14 @@ app.post('/command', (req, res) => {
       }
       emulatorManager.injectFault(id, type);
       console.log(`Command fault for ${id} type ${type}`);
+      break;
+    }
+    case 'reset': {
+      const ok = emulatorManager.resetCharger(id);
+      if (!ok) {
+        return res.status(404).json({ success: false, error: 'CHARGER_NOT_FOUND' });
+      }
+      console.log(`Command reset for ${id}`);
       break;
     }
     default:
@@ -116,5 +132,22 @@ server.listen(PORT, () => {
 app.get("/sessions", async (req, res) => {
   const rows = await db.execute("SELECT * FROM sessions");
   res.json(rows.rows);
+});
+
+app.get('/session/:id', async (req, res) => {
+  const id = req.params.id as string;
+  if (!id) {
+    return res.status(400).json({ success: false, error: 'id is required' });
+  }
+  try {
+    const session = await getSessionById(id);
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND' });
+    }
+    return res.json({ success: true, session });
+  } catch (e) {
+    console.error('Error fetching session:', e);
+    return res.status(500).json({ success: false, error: 'DB_ERROR' });
+  }
 });
 export { server, io };

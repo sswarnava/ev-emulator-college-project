@@ -24,13 +24,13 @@ export class EmulatorManager {
         return c;
     }
 
-    startSession(chargerId: string, sessionId: string): boolean {
+    async startSession(chargerId: string, sessionId: string): Promise<{ ok: boolean; error?: string }> {
         const c = this.chargers.get(chargerId);
         if (!c) {
             console.log(`startSession: charger ${chargerId} not found`);
-            return false;
+            return { ok: false, error: 'NOT_FOUND' };
         }
-        return c.startSession(sessionId);
+        return await c.startSession(sessionId);
     }
 
     stopSession(chargerId: string): boolean {
@@ -102,6 +102,21 @@ export class EmulatorManager {
         this.chargers.delete(id);
         console.log(`EmulatorManager: deleted charger ${id}`);
         return true;
+    }
+
+    resetCharger(id: string): boolean {
+        const c = this.chargers.get(id);
+        if (!c) {
+            console.log(`resetCharger: charger ${id} not found`);
+            return false;
+        }
+        try {
+            c.reset();
+            return true;
+        } catch (err) {
+            console.error(`Error resetting charger ${id}:`, err);
+            return false;
+        }
     }
 }
 
