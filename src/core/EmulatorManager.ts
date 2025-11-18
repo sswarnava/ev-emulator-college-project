@@ -1,8 +1,10 @@
 import Charger from './Charger';
 
 export class EmulatorManager {
+    private static readonly GRID_LIMIT = 10; // kW
     private chargers: Map<string, Charger> = new Map();
     private telemetryHandler: ((t: any) => void) | null = null;
+    private telemetryWrapper: ((t: any) => void) | null = null;
 
     spawnCharger(id: string): Charger {
         let c = this.chargers.get(id);
@@ -11,9 +13,9 @@ export class EmulatorManager {
             this.chargers.set(id, c);
             console.log(`EmulatorManager: spawned charger ${id}`);
             // attach telemetry handler if present
-            if (this.telemetryHandler) {
+            if (this.telemetryWrapper) {
                 try {
-                    c.onTelemetry(this.telemetryHandler);
+                    c.onTelemetry(this.telemetryWrapper);
                 } catch (err) {
                     // ignore
                 }
@@ -22,6 +24,43 @@ export class EmulatorManager {
             console.log(`EmulatorManager: charger ${id} already exists`);
         }
         return c;
+    }
+
+    getTotalPower(): number {
+        let total = 0;
+        for (const c of this.chargers.values()) {
+            if (c.status === 'CHARGING') {
+                total += (c.lastPower || 0);
+            }
+        }
+        return total;
+    }
+
+    applyThrottling(): void {
+        try {
+            const totalPower = this.getTotalPower();
+            if (totalPower <= EmulatorManager.GRID_LIMIT) {
+                // Clear any throttles if present
+                for (const c of this.chargers.values()) {
+                    if (c.status === 'CHARGING') {
+                        c.unthrottle();
+                    }
+                }
+                return;
+            }
+            // If over limit, throttle all charging chargers
+            for (const c of this.chargers.values()) {
+                if (c.status === 'CHARGING') {
+                    try {
+                        c.throttleCurrent();
+                    } catch (err) {
+                        // ignore per-charger errors
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('applyThrottling error:', err);
+        }
     }
 
     async startSession(chargerId: string, sessionId: string): Promise<{ ok: boolean; error?: string }> {
@@ -61,9 +100,23 @@ export class EmulatorManager {
 
     setTelemetryHandler(cb: (t: any) => void) {
         this.telemetryHandler = cb;
+        // create a wrapper that calls the external handler and then applies throttling
+        this.telemetryWrapper = (t: any) => {
+            try {
+                cb(t);
+            } catch (err) {
+                // ignore handler errors
+            }
+            // after telemetry, recalc and apply throttling
+            try {
+                this.applyThrottling();
+            } catch (err) {
+                // ignore
+            }
+        };
         for (const c of this.chargers.values()) {
             try {
-                c.onTelemetry(cb);
+                c.onTelemetry(this.telemetryWrapper);
             } catch (err) {
                 // ignore
             }

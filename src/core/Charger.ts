@@ -7,6 +7,8 @@ export class Charger {
   public status: ChargerStatus;
   public meterKWh: number;
   public currentSessionId: string | null;
+  public currentLimit: number | null = null;
+  public lastPower: number = 0;
   public telemetryInterval: ReturnType<typeof setInterval> | null;
   private telemetryListeners: Array<(t: any) => void> = [];
 
@@ -51,8 +53,13 @@ export class Charger {
     // Current depends on state
     let current = 0;
     if (this.status === 'CHARGING') {
-      // realistic charging current between 12 and 28 A (2.5kW–6.5kW)
-      current = +(this.randomBetween(12, 28)).toFixed(2);
+      // If a current limit is applied (throttling), use it; otherwise use normal range
+      if (this.currentLimit != null) {
+        current = +(this.currentLimit).toFixed(2);
+      } else {
+        // realistic charging current between 12 and 28 A (2.5kW–6.5kW)
+        current = +(this.randomBetween(12, 28)).toFixed(2);
+      }
     } else if (this.status === 'AVAILABLE') {
       // small standby leakage/current
       current = +(+Math.random() * 0.2).toFixed(3);
@@ -67,6 +74,8 @@ export class Charger {
     // energy (kWh) = power_kW * (seconds / 3600)
     const deltaKWh = power_kW * (intervalSeconds / 3600);
     this.meterKWh = +(this.meterKWh + deltaKWh).toFixed(6);
+    // store last measured power for manager-level throttling decisions
+    this.lastPower = power_kW;
 
     const telemetry = {
       id: this.id,
@@ -92,6 +101,19 @@ export class Charger {
     }
 
     return telemetry;
+  }
+
+  throttleCurrent() {
+    // Apply a safe reduced charging current between 10 and 15 A
+    this.currentLimit = +(this.randomBetween(10, 15)).toFixed(2);
+    console.log(`[${this.id}] THROTTLED due to GRID LIMIT -> currentLimit=${this.currentLimit}A`);
+  }
+
+  unthrottle() {
+    if (this.currentLimit != null) {
+      this.currentLimit = null;
+      console.log(`[${this.id}] UNTHROTTLED; restoring normal charging current range`);
+    }
   }
 
   async startSession(sessionId: string): Promise<{ ok: boolean; error?: string }> {
