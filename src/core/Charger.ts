@@ -1,6 +1,6 @@
 import { insertSessionStart, updateSessionStop, getSessionStartTime } from "../db/database";
 
-export type ChargerStatus = 'AVAILABLE' | 'CHARGING' | 'FAULTY';
+export type ChargerStatus = 'AVAILABLE' | 'CHARGING' | 'FAULTY' | 'OFFLINE';
 
 export class Charger {
   public id: string;
@@ -9,8 +9,14 @@ export class Charger {
   public currentSessionId: string | null;
   public currentLimit: number | null = null;
   public lastPower: number = 0;
+  public lastHeartbeat: number = Date.now();
   public chargingMode: 'SLOW' | 'NORMAL' | 'FAST' = 'NORMAL';
   public telemetryInterval: ReturnType<typeof setInterval> | null;
+  public intervalMs: number;
+  public idleStartTimestamp: number | null = null;
+  public readonly IDLE_CURRENT_THRESHOLD = 0.1; // amps
+  public readonly IDLE_POWER_THRESHOLD = 0.05; // kW
+  public readonly IDLE_TIMEOUT_MS = 20 * 1000; // 20 seconds
   private telemetryListeners: Array<(t: any) => void> = [];
 
   private static readonly RATE_PER_KWH = 12; // Rs.12 per kWh
@@ -21,6 +27,7 @@ export class Charger {
     this.meterKWh = 0;
     this.currentSessionId = null;
     this.telemetryInterval = null;
+    this.intervalMs = 10 * 1000; // default telemetry interval (ms)
 
     console.log(`Charger ${this.id} created, starting telemetry.`);
     this.startTelemetry();
@@ -28,11 +35,10 @@ export class Charger {
 
   startTelemetry() {
     if (this.telemetryInterval) return;
-    const intervalMs = 10 * 1000; // 10 seconds
     this.telemetryInterval = setInterval(() => {
-      const t = this.generateTelemetry(intervalMs / 1000);
+      const t = this.generateTelemetry(this.intervalMs / 1000);
       console.log(`Telemetry [${this.id}]`, t);
-    }, intervalMs);
+    }, this.intervalMs);
     console.log(`Telemetry started for charger ${this.id}`);
   }
 
@@ -41,6 +47,24 @@ export class Charger {
     clearInterval(this.telemetryInterval);
     this.telemetryInterval = null;
     console.log(`Telemetry stopped for charger ${this.id}`);
+  }
+
+  pauseTelemetry() {
+    if (this.telemetryInterval) {
+      clearInterval(this.telemetryInterval);
+      this.telemetryInterval = null;
+      console.log(`[${this.id}] Telemetry paused`);
+    }
+  }
+
+  resumeTelemetry() {
+    if (!this.telemetryInterval) {
+      this.telemetryInterval = setInterval(() => {
+        const t = this.generateTelemetry(this.intervalMs / 1000);
+        console.log(`Telemetry [${this.id}]`, t);
+      }, this.intervalMs);
+      console.log(`[${this.id}] Telemetry resumed`);
+    }
   }
 
   private randomBetween(min: number, max: number): number {
@@ -82,6 +106,29 @@ export class Charger {
     // store last measured power for manager-level throttling decisions
     this.lastPower = power_kW;
 
+    // IDLE TIMEOUT detection: if charging but drawing almost no current/power for a period, auto-stop
+    try {
+      if (this.status === 'CHARGING') {
+        if (current < this.IDLE_CURRENT_THRESHOLD && power_kW < this.IDLE_POWER_THRESHOLD) {
+          if (this.idleStartTimestamp == null) {
+            this.idleStartTimestamp = Date.now();
+          } else {
+            if (Date.now() - this.idleStartTimestamp > this.IDLE_TIMEOUT_MS) {
+              console.log(`[${this.id}] Idle timeout reached, stopping session`);
+              this.idleStartTimestamp = null;
+              this.stopSession('IDLE_TIMEOUT');
+              // don't emit telemetry for charging state after stopping; next tick will emit AVAILABLE
+              return;
+            }
+          }
+        } else {
+          this.idleStartTimestamp = null;
+        }
+      }
+    } catch (err) {
+      // ignore idle detection errors
+    }
+
     const telemetry = {
       id: this.id,
       timestamp: new Date().toISOString(),
@@ -105,6 +152,13 @@ export class Charger {
       // ignore
     }
 
+    // send heartbeat after telemetry
+    try {
+      this.sendHeartbeat();
+    } catch (err) {
+      // ignore
+    }
+
     return telemetry;
   }
 
@@ -119,6 +173,11 @@ export class Charger {
       this.currentLimit = null;
       console.log(`[${this.id}] UNTHROTTLED; restoring normal charging current range`);
     }
+  }
+
+  sendHeartbeat() {
+    this.lastHeartbeat = Date.now();
+    console.log(`[${this.id}] HEARTBEAT`);
   }
 
   setMode(mode: string) {

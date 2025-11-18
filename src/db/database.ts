@@ -80,6 +80,29 @@ export async function getSessionById(id: string) {
   return result.rows?.[0] ?? null;
 }
 
+export async function getAnalytics() {
+  // totals and averages
+  const totalRes = await db.execute({ sql: `SELECT COUNT(*) as cnt, COALESCE(SUM(energy_kWh),0) as total_energy, COALESCE(SUM(bill_amount),0) as total_revenue, COALESCE(AVG(duration_minutes),0) as avg_duration_minutes FROM sessions`, args: [] });
+  const row = totalRes.rows?.[0] ?? { cnt: 0, total_energy: 0, total_revenue: 0, avg_duration_minutes: 0 };
+
+  // stop reason counts
+  const reasonRes = await db.execute({ sql: `SELECT stop_reason, COUNT(*) as cnt FROM sessions GROUP BY stop_reason`, args: [] });
+  const counts: Record<string, number> = { USER_STOP: 0, FAULT: 0, IDLE_TIMEOUT: 0, other: 0 };
+  for (const r of (reasonRes.rows || [])) {
+    const key = (r.stop_reason as string) || 'other';
+    if (key === 'USER_STOP' || key === 'FAULT' || key === 'IDLE_TIMEOUT') counts[key] = Number(r.cnt || 0);
+    else counts.other += Number(r.cnt || 0);
+  }
+
+  return {
+    total_sessions: Number(row.cnt || 0),
+    total_energy_kWh: Number(row.total_energy || 0),
+    total_revenue: Number(row.total_revenue || 0),
+    avg_duration_minutes: Number(row.avg_duration_minutes || 0),
+    stop_reason_counts: counts,
+  };
+}
+
 export async function updateSessionStop(id: string, stop_ts: string, energy_kWh: number, stop_reason: string, duration_seconds: number, duration_minutes: number, duration_human: string, bill_amount: number) {
   await db.execute({
     sql: `

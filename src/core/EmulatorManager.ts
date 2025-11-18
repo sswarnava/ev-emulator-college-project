@@ -2,9 +2,21 @@ import Charger from './Charger';
 
 export class EmulatorManager {
     private static readonly GRID_LIMIT = 10; // kW
+    private static readonly HEARTBEAT_TIMEOUT = 60 * 1000; // 60 seconds
     private chargers: Map<string, Charger> = new Map();
     private telemetryHandler: ((t: any) => void) | null = null;
     private telemetryWrapper: ((t: any) => void) | null = null;
+
+    constructor() {
+        // Periodically check heartbeat status every 5 seconds
+        setInterval(() => {
+            try {
+                this.checkHeartbeatStatus();
+            } catch (err) {
+                // ignore
+            }
+        }, 5000);
+    }
 
     spawnCharger(id: string): Charger {
         let c = this.chargers.get(id);
@@ -60,6 +72,28 @@ export class EmulatorManager {
             }
         } catch (err) {
             console.error('applyThrottling error:', err);
+        }
+    }
+
+    checkHeartbeatStatus(): void {
+        const now = Date.now();
+        for (const c of this.chargers.values()) {
+            try {
+                const elapsed = now - (c.lastHeartbeat || 0);
+                if (elapsed > EmulatorManager.HEARTBEAT_TIMEOUT) {
+                    if (c.status !== 'OFFLINE') {
+                        c.status = 'OFFLINE';
+                        console.log(`[${c.id}] marked OFFLINE`);
+                    }
+                } else {
+                    if (c.status === 'OFFLINE') {
+                        c.status = 'AVAILABLE';
+                        console.log(`[${c.id}] heartbeat resumed — marked AVAILABLE`);
+                    }
+                }
+            } catch (err) {
+                // ignore per-charger errors
+            }
         }
     }
 
@@ -183,6 +217,36 @@ export class EmulatorManager {
             return true;
         } catch (err) {
             console.error(`Error setting mode for charger ${id}:`, err);
+            return false;
+        }
+    }
+
+    pauseTelemetry(id: string): boolean {
+        const c = this.chargers.get(id);
+        if (!c) {
+            console.log(`pauseTelemetry: charger ${id} not found`);
+            return false;
+        }
+        try {
+            c.pauseTelemetry();
+            return true;
+        } catch (err) {
+            console.error(`Error pausing telemetry for charger ${id}:`, err);
+            return false;
+        }
+    }
+
+    resumeTelemetry(id: string): boolean {
+        const c = this.chargers.get(id);
+        if (!c) {
+            console.log(`resumeTelemetry: charger ${id} not found`);
+            return false;
+        }
+        try {
+            c.resumeTelemetry();
+            return true;
+        } catch (err) {
+            console.error(`Error resuming telemetry for charger ${id}:`, err);
             return false;
         }
     }

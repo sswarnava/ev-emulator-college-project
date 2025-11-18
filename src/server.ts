@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import emulatorManager from './core/EmulatorManager';
-import { db, initDb, getSessionById } from "./db/database";
+import { db, initDb, getSessionById, getAnalytics } from "./db/database";
 
 export const app = express();
 
@@ -85,6 +85,22 @@ app.post('/command', async (req, res) => {
       console.log(`Command mode for ${id} mode ${mode}`);
       return res.json({ success: true, id, cmd: 'mode', mode });
     }
+    case 'pauseTelemetry': {
+      const ok = emulatorManager.pauseTelemetry(id);
+      if (!ok) {
+        return res.status(404).json({ success: false, error: 'CHARGER_NOT_FOUND' });
+      }
+      console.log(`Command pauseTelemetry for ${id}`);
+      return res.json({ success: true, id, cmd: 'pauseTelemetry' });
+    }
+    case 'resumeTelemetry': {
+      const ok = emulatorManager.resumeTelemetry(id);
+      if (!ok) {
+        return res.status(404).json({ success: false, error: 'CHARGER_NOT_FOUND' });
+      }
+      console.log(`Command resumeTelemetry for ${id}`);
+      return res.json({ success: true, id, cmd: 'resumeTelemetry' });
+    }
     case 'reset': {
       const ok = emulatorManager.resetCharger(id);
       if (!ok) {
@@ -159,6 +175,16 @@ app.get('/session/:id', async (req, res) => {
     return res.json({ success: true, session });
   } catch (e) {
     console.error('Error fetching session:', e);
+    return res.status(500).json({ success: false, error: 'DB_ERROR' });
+  }
+});
+
+app.get('/analytics', async (_req, res) => {
+  try {
+    const data = await getAnalytics();
+    return res.json({ success: true, analytics: data });
+  } catch (e) {
+    console.error('Error fetching analytics:', e);
     return res.status(500).json({ success: false, error: 'DB_ERROR' });
   }
 });
