@@ -9,6 +9,7 @@ export class Charger {
   public currentSessionId: string | null;
   public currentLimit: number | null = null;
   public lastPower: number = 0;
+  public chargingMode: 'SLOW' | 'NORMAL' | 'FAST' = 'NORMAL';
   public telemetryInterval: ReturnType<typeof setInterval> | null;
   private telemetryListeners: Array<(t: any) => void> = [];
 
@@ -53,18 +54,22 @@ export class Charger {
     // Current depends on state
     let current = 0;
     if (this.status === 'CHARGING') {
-      // If a current limit is applied (throttling), use it; otherwise use normal range
+      // Throttling overrides mode
       if (this.currentLimit != null) {
         current = +(this.currentLimit).toFixed(2);
       } else {
-        // realistic charging current between 12 and 28 A (2.5kW–6.5kW)
-        current = +(this.randomBetween(12, 28)).toFixed(2);
+        // Choose current range based on chargingMode
+        if (this.chargingMode === 'SLOW') {
+          current = +(this.randomBetween(10, 14)).toFixed(2);
+        } else if (this.chargingMode === 'NORMAL') {
+          current = +(this.randomBetween(15, 22)).toFixed(2);
+        } else {
+          // FAST
+          current = +(this.randomBetween(23, 32)).toFixed(2);
+        }
       }
-    } else if (this.status === 'AVAILABLE') {
-      // small standby leakage/current
-      current = +(+Math.random() * 0.2).toFixed(3);
     } else {
-      // FAULTY
+      // Not charging: no current draw
       current = 0;
     }
 
@@ -113,6 +118,16 @@ export class Charger {
     if (this.currentLimit != null) {
       this.currentLimit = null;
       console.log(`[${this.id}] UNTHROTTLED; restoring normal charging current range`);
+    }
+  }
+
+  setMode(mode: string) {
+    const m = mode?.toUpperCase?.();
+    if (m === 'SLOW' || m === 'NORMAL' || m === 'FAST') {
+      this.chargingMode = m as 'SLOW' | 'NORMAL' | 'FAST';
+      console.log(`[${this.id}] Mode set to ${this.chargingMode}`);
+    } else {
+      console.warn(`[${this.id}] Invalid mode '${mode}' - ignoring`);
     }
   }
 

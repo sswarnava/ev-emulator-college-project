@@ -171,6 +171,21 @@ export class EmulatorManager {
             return false;
         }
     }
+
+    setMode(id: string, mode: string): boolean {
+        const c = this.chargers.get(id);
+        if (!c) {
+            console.log(`setMode: charger ${id} not found`);
+            return false;
+        }
+        try {
+            c.setMode(mode);
+            return true;
+        } catch (err) {
+            console.error(`Error setting mode for charger ${id}:`, err);
+            return false;
+        }
+    }
 }
 
 export const emulatorManager = new EmulatorManager();

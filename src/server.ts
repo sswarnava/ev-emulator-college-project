@@ -73,6 +73,18 @@ app.post('/command', async (req, res) => {
       console.log(`Command fault for ${id} type ${type}`);
       break;
     }
+    case 'mode': {
+      const mode = type;
+      if (!mode) {
+        return res.status(400).json({ success: false, error: 'mode is required for mode command' });
+      }
+      const ok = emulatorManager.setMode(id, mode);
+      if (!ok) {
+        return res.status(404).json({ success: false, error: 'CHARGER_NOT_FOUND' });
+      }
+      console.log(`Command mode for ${id} mode ${mode}`);
+      return res.json({ success: true, id, cmd: 'mode', mode });
+    }
     case 'reset': {
       const ok = emulatorManager.resetCharger(id);
       if (!ok) {
