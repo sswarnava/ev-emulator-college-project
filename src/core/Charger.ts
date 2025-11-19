@@ -13,6 +13,7 @@ export class Charger {
   public chargingMode: 'SLOW' | 'NORMAL' | 'FAST' = 'NORMAL';
   public telemetryInterval: ReturnType<typeof setInterval> | null;
   public intervalMs: number;
+  public forceIdleMode: boolean = false;
   public idleStartTimestamp: number | null = null;
   public readonly IDLE_CURRENT_THRESHOLD = 0.1; // amps
   public readonly IDLE_POWER_THRESHOLD = 0.05; // kW
@@ -97,6 +98,11 @@ export class Charger {
       current = 0;
     }
 
+    // If forceIdleMode is enabled, simulate zero current/power while still emitting telemetry
+    if (this.forceIdleMode && this.status === 'CHARGING') {
+      current = 0;
+    }
+
     const power_kW = +( (voltage * current) / 1000 ).toFixed(4);
 
     // accumulate energy in kWh over the provided interval (seconds)
@@ -178,6 +184,11 @@ export class Charger {
   sendHeartbeat() {
     this.lastHeartbeat = Date.now();
     console.log(`[${this.id}] HEARTBEAT`);
+  }
+
+  setForceIdle(flag: boolean) {
+    this.forceIdleMode = !!flag;
+    console.log(`[${this.id}] forceIdleMode = ${this.forceIdleMode}`);
   }
 
   setMode(mode: string) {

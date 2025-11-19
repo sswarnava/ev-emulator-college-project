@@ -101,6 +101,15 @@ app.post('/command', async (req, res) => {
       console.log(`Command resumeTelemetry for ${id}`);
       return res.json({ success: true, id, cmd: 'resumeTelemetry' });
     }
+    case 'forceIdle': {
+      const flag = body.flag === true || body.flag === 'true';
+      const ok = emulatorManager.forceIdle(id, flag);
+      if (!ok) {
+        return res.status(404).json({ success: false, error: 'CHARGER_NOT_FOUND' });
+      }
+      console.log(`Command forceIdle for ${id} flag=${flag}`);
+      return res.json({ success: true, id, cmd: 'forceIdle' });
+    }
     case 'reset': {
       const ok = emulatorManager.resetCharger(id);
       if (!ok) {

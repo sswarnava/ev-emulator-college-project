@@ -221,6 +221,21 @@ export class EmulatorManager {
         }
     }
 
+    forceIdle(id: string, flag: boolean): boolean {
+        const c = this.chargers.get(id);
+        if (!c) {
+            console.log(`forceIdle: charger ${id} not found`);
+            return false;
+        }
+        try {
+            c.setForceIdle(!!flag);
+            return true;
+        } catch (err) {
+            console.error(`Error forcing idle for charger ${id}:`, err);
+            return false;
+        }
+    }
+
     pauseTelemetry(id: string): boolean {
         const c = this.chargers.get(id);
         if (!c) {
